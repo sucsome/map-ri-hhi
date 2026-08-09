@@ -1,12 +1,32 @@
 import { spawn } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { statSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const PORT = 9222;
 const APP = process.env.SMOKE_URL || 'http://localhost:8000/';
+const ARCHIVE = 'ri_data_v2.pmtiles';
+const EXPECTED_SIZE = statSync(new URL(`../share_hhi_data/${ARCHIVE}`, import.meta.url)).size;
 const ud = join(tmpdir(), 'opencode-chrome-smoke');
+
+function zxy(lng, lat, z) {
+  const n = 2 ** z;
+  const x = Math.floor(((lng + 180) / 360) * n);
+  const y = Math.floor(((1 - Math.log(Math.tan((lat * Math.PI) / 180) + 1 / Math.cos((lat * Math.PI) / 180)) / Math.PI) / 2) * n);
+  return [z, x, y];
+}
+const TILE_SAMPLE = [
+  zxy(-71.5, 41.6, 12),
+  zxy(-71.2, 41.4, 12),
+  zxy(-71.8, 41.9, 12),
+  zxy(-71.4, 41.9, 12),
+  zxy(-71.5, 41.6, 9)
+];
+
+const resolveRules = process.env.SMOKE_RESOLVE
+  ? [`--host-resolver-rules=${process.env.SMOKE_RESOLVE.split(',').map((h) => `MAP ${h.replace(':', ' ')}`).join(',')}`]
+  : [];
 
 const results = [];
 function check(name, ok, extra = '') {
@@ -25,6 +45,7 @@ const chrome = spawn(CHROME, [
   '--no-default-browser-check',
   `--remote-debugging-port=${PORT}`,
   `--user-data-dir=${ud}`,
+  ...resolveRules,
   'about:blank'
 ], { stdio: 'ignore' });
 
@@ -84,7 +105,8 @@ try {
   await cdp.send('Page.navigate', { url: APP });
 
   await waitFor(() => cdp.eval(`document.getElementById('search-input') && !document.getElementById('search-input').disabled`));
-  await sleep(800);
+  await waitFor(() => cdp.eval(`document.getElementById('legend').querySelector('h4')?.textContent?.length > 0`), 15000);
+  await sleep(300);
 
   check('variable selector has 4 options', await cdp.eval(`document.querySelectorAll('#variable option').length`) === 4);
   check('legend rendered for default variable', (await cdp.eval(`document.getElementById('legend').querySelector('h4')?.textContent`))?.includes('Racial HHI'));
@@ -94,6 +116,29 @@ try {
     return !!m;
   })()`);
   check('map canvas mounted', choro);
+
+  // ---- tile archive integrity: range requests must serve the full archive ----
+  const archive = await cdp.eval(`(async () => {
+    const r = await fetch('${ARCHIVE}', { headers: { Range: 'bytes=0-127' } });
+    return { status: r.status, range: r.headers.get('content-range') || '', len: (await r.arrayBuffer()).byteLength };
+  })()`);
+  check('tile archive serves full size via range', archive.status === 206 && archive.range.endsWith(`/${EXPECTED_SIZE}`), `${archive.range} (expected ${EXPECTED_SIZE})`);
+
+  // ---- block features must actually be present in loaded tiles ----
+  const tiles = await cdp.eval(`(async () => {
+    const t = new pmtiles.PMTiles('${ARCHIVE}');
+    const md = await t.getMetadata();
+    const rows = [];
+    for (const [z, x, y] of ${JSON.stringify(TILE_SAMPLE)}) {
+      try {
+        const r = await t.getZxy(z, x, y);
+        rows.push({ z, x, y, bytes: r && r.data ? r.data.byteLength : 0 });
+      } catch (e) { rows.push({ z, x, y, err: e.message }); }
+    }
+    return { hasMd: !!md && typeof md === 'object', mdName: md && md.name, rows };
+  })()`);
+  check('tile archive metadata loads', tiles.hasMd === true, tiles.mdName || '');
+  check('block tiles served from archive', tiles.rows.every((r) => r.bytes > 0 && !r.err), tiles.rows.map((r) => `${r.z}/${r.x}/${r.y}:${r.err ? 'ERR ' + r.err : r.bytes + 'B'}`).join(', '));
 
   check('no visible toast error', (await cdp.eval(`document.getElementById('toast').classList.contains('show')`)) === false);
 
@@ -167,6 +212,7 @@ try {
   process.exitCode = failed.length ? 1 : 0;
 } catch (err) {
   console.error('SMOKE ERROR:', err.message);
+  if (results.length) console.log('partial:', results.map((r) => `${r.ok ? 'PASS' : 'FAIL'} ${r.name}`).join(' | '));
   process.exitCode = 1;
 } finally {
   try { ws?.close(); } catch {}

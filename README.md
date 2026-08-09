@@ -91,7 +91,7 @@ economics/
 │  │  └─ permalink.js          Encodes the current view in the URL so it can be shared.
 │  ├─ data/block_props.json    Generated index: every block's full record + precomputed
 │  │                           statistics (percentiles, county/tract summaries). ~12 MB.
-│  ├─ ri_data.pmtiles          The map tiles (vector tiles, z0–z12) used to draw the map.
+│  ├─ ri_data_v2.pmtiles         The map tiles (vector tiles, z0–z12) used to draw the map.
 │  ├─ ri_data.geojson          The original census data (all blocks, all fields) — the
 │  │                           source that the build script reads.
 │  └─ ri_outline.geojson       A single thin outline of Rhode Island for the border.
@@ -110,7 +110,7 @@ economics/
    - **summary statistics for each county and census tract** (block count, population,
      population-weighted HHI, and the most / least segregated block in each).
 3. **The app** fetches that one file at startup and uses it for search and for the side panel.
-   The map itself is drawn from `ri_data.pmtiles` (pre-built vector tiles).
+   The map itself is drawn from `ri_data_v2.pmtiles` (pre-built vector tiles).
 
 To regenerate the index after changing the source data:
 

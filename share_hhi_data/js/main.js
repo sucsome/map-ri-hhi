@@ -17,7 +17,7 @@ function buildStyle() {
   return {
     version: 8,
     sources: {
-      ri: { type: 'vector', url: 'pmtiles://ri_data.pmtiles' },
+      ri: { type: 'vector', url: 'pmtiles://ri_data_v2.pmtiles' },
       'ri-outline': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } }
     },
     layers: [
@@ -59,6 +59,7 @@ function initMap() {
     maxBounds: RI_MAX_BOUNDS
   });
   state.map = map;
+  window.__map = map;
   map.fitBounds(RI_BOUNDS, { padding: 8, duration: 0 });
 
   fetch('ri_outline.geojson')
