@@ -2,236 +2,75 @@
 <html>
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>RI — Racial HHI by Census Block</title>
 
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css" />
-
-  <style>
-    html, body {
-      margin: 0;
-      height: 100%;
-      background: #ece9e2;
-    }
-    #map {
-      width: 100%;
-      height: 100%;
-    }
-    #legend {
-      position: absolute;
-      bottom: 24px;
-      left: 12px;
-      z-index: 10;
-      background: rgba(255, 255, 255, 0.95);
-      padding: 10px 12px;
-      border-radius: 6px;
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
-      font: 12px/1.4 -apple-system, Segoe UI, sans-serif;
-    }
-    #legend h4 {
-      margin: 0 0 6px;
-      font-size: 12px;
-    }
-    #legend .bar {
-      width: 180px;
-      height: 10px;
-      border-radius: 2px;
-      background: linear-gradient(to right, #67a9cf, #d1e5f0, #f7f7f7, #fdae61, #f46d43, #d73027);
-    }
-    #legend .labels {
-      display: flex;
-      justify-content: space-between;
-      margin-top: 3px;
-      color: #555;
-    }
-    #legend .nodata {
-      margin-top: 6px;
-    }
-    #legend .nodata .swatch {
-      display: inline-block;
-      width: 10px;
-      height: 10px;
-      background: #dcdcdc;
-      border: 1px solid #ccc;
-      border-radius: 2px;
-      margin-right: 6px;
-      vertical-align: -1px;
-    }
-    .maplibregl-popup {
-      font: 12px/1.5 -apple-system, Segoe UI, sans-serif;
-    }
-    .maplibregl-popup-content {
-      padding: 10px 12px;
-    }
-    .maplibregl-popup-content h3 {
-      margin: 0 0 6px;
-      font-size: 13px;
-    }
-    .maplibregl-popup-content table {
-      border-collapse: collapse;
-    }
-    .maplibregl-popup-content td {
-      padding: 1px 0;
-    }
-    .maplibregl-popup-content td:first-child {
-      color: #666;
-      padding-right: 14px;
-    }
-  </style>
+  <link rel="stylesheet" href="css/app.css" />
 </head>
 <body>
 
-<div id="map"></div>
+<div id="app">
+  <header id="topbar">
+    <div class="brand">Rhode Island · Racial HHI<small>Census blocks · American Community Survey 2020</small></div>
+    <div class="badge">2020</div>
 
-<div id="legend">
-  <h4>Racial HHI (race_hhi)</h4>
-  <div class="bar"></div>
-  <div class="labels"><span>More diverse</span><span>Less diverse</span></div>
-  <div class="nodata"><span class="swatch"></span>No population / no data</div>
+    <div id="search">
+      <input id="search-input" type="text" autocomplete="off" spellcheck="false"
+             placeholder="Loading block index…" disabled />
+      <div id="search-suggestions"></div>
+    </div>
+
+    <select id="variable" title="Choropleth variable"></select>
+    <button id="about-btn" type="button">About</button>
+  </header>
+
+  <div id="mapwrap">
+    <div id="map"></div>
+
+    <div id="legend"></div>
+    <div id="toast"></div>
+
+    <aside id="panel">
+      <div id="panel-head">
+        <div id="panel-title-row">
+          <div id="panel-title"></div>
+          <button id="panel-copy" type="button">Copy GEOID</button>
+          <button id="panel-close" type="button" aria-label="Close">&#10005;</button>
+        </div>
+        <div id="panel-sub"></div>
+      </div>
+      <div id="panel-tabs">
+        <button type="button" data-tab="attrs" class="active">Attributes</button>
+        <button type="button" data-tab="compare">Compare</button>
+      </div>
+      <div id="panel-body">
+        <div id="tab-attrs" class="tab active"></div>
+        <div id="tab-compare" class="tab"></div>
+      </div>
+    </aside>
+  </div>
 </div>
+
+<dialog id="about-modal">
+  <h3>About this map</h3>
+  <p>
+    This explorer maps the <b>Racial HHI</b> for every census block in Rhode Island (2020).
+    The HHI (Herfindahl–Hirschman Index, scaled 0–10,000) measures how concentrated a block's
+    population is across racial groups: a low value means the block is racially diverse, while a
+    high value means it is dominated by a single group. Blocks with no population are shown grey.
+  </p>
+  <p>
+    Search any block name, GEOID, census tract, or county to jump to that location and open its
+    full attribute record in the side panel. The current view, variable, and selection are encoded
+    in the URL, so any view can be shared or bookmarked.
+  </p>
+  <button id="about-close" type="button">Close</button>
+</dialog>
 
 <script src="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/pmtiles@3/dist/pmtiles.js"></script>
-
-<script>
-const protocol = new pmtiles.Protocol();
-maplibregl.addProtocol('pmtiles', protocol.tile);
-
-const RI_BOUNDS = [[-71.9073, 41.0958], [-71.0886, 42.0188]];
-const RI_MAX_BOUNDS = [[-72.01, 40.99], [-70.99, 42.12]];
-
-const map = new maplibregl.Map({
-  container: 'map',
-  style: {
-    version: 8,
-    sources: {
-      ri: {
-        type: 'vector',
-        url: 'pmtiles://ri_data.pmtiles'
-      },
-      'ri-outline': {
-        type: 'geojson',
-        data: { type: 'FeatureCollection', features: [] }
-      }
-    },
-    layers: [
-      {
-        id: 'background',
-        type: 'background',
-        paint: {
-          'background-color': '#ece9e2'
-        }
-      },
-      {
-        id: 'ri-choropleth',
-        type: 'fill',
-        source: 'ri',
-        'source-layer': 'ri_data',
-        paint: {
-          'fill-color': [
-            'case',
-            ['==', ['coalesce', ['get', 'race_hhi'], 0], 0], '#dcdcdc',
-            ['interpolate', ['linear'], ['get', 'race_hhi'],
-              2000, '#67a9cf',
-              4000, '#d1e5f0',
-              5874, '#f7f7f7',
-              7500, '#fdae61',
-              8500, '#f46d43',
-              10000, '#d73027',
-              20000, '#7f0000'
-            ]
-          ],
-          'fill-opacity': 1
-        }
-      },
-      {
-        id: 'ri-hover',
-        type: 'fill',
-        source: 'ri',
-        'source-layer': 'ri_data',
-        filter: ['==', ['get', 'GEOID20'], ''],
-        paint: {
-          'fill-color': 'rgba(0, 0, 0, 0.22)'
-        }
-      },
-      {
-        id: 'ri-outlines',
-        type: 'line',
-        source: 'ri',
-        'source-layer': 'ri_data',
-        paint: {
-          'line-color': '#ffffff',
-          'line-opacity': ['interpolate', ['linear'], ['zoom'],
-            9, 0.35,
-            12, 0.15,
-            13, 0
-          ],
-          'line-width': 0.5
-        }
-      },
-      {
-        id: 'ri-boundary',
-        type: 'line',
-        source: 'ri-outline',
-        paint: {
-          'line-color': '#4a4a4a',
-          'line-width': 1.2,
-          'line-opacity': 0.75
-        }
-      }
-    ]
-  },
-  maxBounds: RI_MAX_BOUNDS
-});
-
-map.fitBounds(RI_BOUNDS, { padding: 8, duration: 0 });
-
-fetch('ri_outline.geojson')
-  .then((r) => r.json())
-  .then((gj) => map.getSource('ri-outline').setData(gj))
-  .catch((err) => console.error('outline load failed', err));
-
-const popup = new maplibregl.Popup({
-  closeButton: true,
-  maxWidth: '260px'
-});
-
-map.on('click', 'ri-choropleth', (e) => {
-  const p = e.features[0].properties;
-  const hhi = p.race_hhi;
-  const fmt = (v) => v === undefined || v === null ? '—' : Number(v).toLocaleString();
-  const hhiText = hhi === 0
-    ? '0 (no population)'
-    : Number(hhi).toLocaleString();
-
-  popup
-    .setLngLat(e.lngLat)
-    .setHTML(`
-      <h3>${p.NAME20 !== undefined && p.NAME20 !== null && p.NAME20 !== '' ? p.NAME20 : 'Census Block'}</h3>
-      <table>
-        <tr><td>GEOID20</td><td>${p.GEOID20 !== undefined ? p.GEOID20 : '—'}</td></tr>
-        <tr><td>Race HHI</td><td>${hhiText}</td></tr>
-        <tr><td>Total pop</td><td>${fmt(p.total_pop)}</td></tr>
-      </table>`)
-    .addTo(map);
-});
-
-let hoveredGid = null;
-
-map.on('mousemove', 'ri-choropleth', (e) => {
-  map.getCanvas().style.cursor = 'pointer';
-  const gid = e.features[0].properties.GEOID20;
-  if (gid && gid !== hoveredGid) {
-    hoveredGid = gid;
-    map.setFilter('ri-hover', ['==', ['get', 'GEOID20'], gid]);
-  }
-});
-
-map.on('mouseleave', 'ri-choropleth', () => {
-  map.getCanvas().style.cursor = '';
-  hoveredGid = null;
-  map.setFilter('ri-hover', ['==', ['get', 'GEOID20'], '']);
-});
-</script>
+<script type="module" src="js/main.js"></script>
 
 </body>
 </html>
