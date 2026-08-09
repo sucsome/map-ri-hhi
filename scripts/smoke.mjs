@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const PORT = 9222;
-const APP = 'http://localhost:8000/';
+const APP = process.env.SMOKE_URL || 'http://localhost:8000/';
 const ud = join(tmpdir(), 'opencode-chrome-smoke');
 
 const results = [];
