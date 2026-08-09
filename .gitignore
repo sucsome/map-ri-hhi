@@ -1,0 +1,5 @@
+node_modules/
+.DS_Store
+
+# Raw shapefile set (duplicated by ri_data.geojson)
+ri_shapefile_test.*
