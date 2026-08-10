@@ -129,7 +129,13 @@ URL sharing round-trip.
 node scripts/smoke.mjs
 ```
 
-Expect: `23/23 checks passed`.
+Expect: `26/26 checks passed`.
+
+The map's vector tiles come from `ri_data_v2.pmtiles`. GitHub Pages gzip-compresses the archive
+for browsers and serves byte-range requests against the compressed bytes, so the app downloads
+the full archive once (`scripts/` smoke and the app verify this) and serves tiles from memory
+instead of using HTTP range requests. If the download is ever served mangled, the app falls back
+to `raw.githubusercontent.com` for the archive and the JSON data files.
 
 ---
 
@@ -147,22 +153,19 @@ Because this repo is **public** on GitHub, the simplest free options are:
    (The site files live in `share_hhi_data/`, so enabling Pages requires a one-time setup to
    serve that folder — see `#github-pages` below if you want it.)
 
-### GitHub Pages (optional one-time setup)
+### GitHub Pages (one-time setup)
 
-The app is fully static and speaks plain HTTP range requests, so GitHub Pages can host it. Two
-small changes make it work:
+The site is hosted from the repo root via a redirect stub. Two small changes make it work:
 
-1. Create a `docs/` folder at the repo root (GitHub Pages can serve a `docs/` folder, but not
-   an arbitrary subfolder like `share_hhi_data/`). Either move the site files there, or
-   duplicate them with a redirect stub at the repo root.
-2. In the repo on GitHub: **Settings → Pages → Deploy from a branch → main → /docs → Save.**
+1. Keep `index.html` at the repo root that does
+   `<meta http-equiv="refresh" content="0; url=/map-ri-hhi/share_hhi_data/">` so visiting
+   `https://<user>.github.io/map-ri-hhi/` lands on the app, and add `share_hhi_data/` to the
+   deployed branch.
+2. In the repo on GitHub: **Settings → Pages → Deploy from a branch → main → / (root) → Save.**
 
-Then share `https://sucsome.github.io/map-ri-hhi/`. The 90 MB source geojson stays out of the
-way (Pages only serves what's in `docs/`).
-
-> A redirect stub approach: keep `index.html` at the repo root that simply does
-> `<meta http-equiv="refresh" content="0; url=/map-ri-hhi/share_hhi_data/">`, and add
-> `share_hhi_data/` to the deployed branch. This avoids duplicating files.
+Then share `https://<user>.github.io/map-ri-hhi/`. (The live site is served through Cloudflare
+at `https://scocs.casa/map-ri-hhi/`, which terminates HTTPS and proxies to the Pages origin; the
+data files are fetched with `raw.githubusercontent.com` as a fallback source.)
 
 ### Other free hosting (alternative to Pages)
 
