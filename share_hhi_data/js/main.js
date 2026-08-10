@@ -7,6 +7,43 @@ import { parse as parsePermalink, write as writePermalink } from './permalink.js
 const protocol = new pmtiles.Protocol();
 maplibregl.addProtocol('pmtiles', protocol.tile);
 
+const ARCHIVE = 'ri_data_v2.pmtiles';
+const RAW_BASE = 'https://raw.githubusercontent.com/sucsome/map-ri-hhi/main/share_hhi_data';
+
+function isPmtiles(bytes) {
+  if (bytes.byteLength < 16) return false;
+  const d = new Uint8Array(bytes);
+  let s = '';
+  for (let i = 0; i < 7; i++) s += String.fromCharCode(d[i]);
+  return s === 'PMTiles';
+}
+
+async function loadPmtiles() {
+  let bytes = await (await fetch(ARCHIVE)).arrayBuffer();
+  if (!isPmtiles(bytes)) {
+    bytes = await (await fetch(`${RAW_BASE}/${ARCHIVE}`)).arrayBuffer();
+  }
+  const arr = new Uint8Array(bytes);
+  const source = {
+    getKey: () => ARCHIVE,
+    getBytes: (offset, length) => Promise.resolve({ data: arr.slice(offset, offset + length).buffer })
+  };
+  window.__pmtiles = new pmtiles.PMTiles(source);
+  protocol.add(window.__pmtiles);
+}
+
+async function fetchData(rel) {
+  try {
+    const r = await fetch(rel);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.json();
+  } catch (err) {
+    const r = await fetch(`${RAW_BASE}/${rel}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status} (fallback)`);
+    return await r.json();
+  }
+}
+
 let hoveredGid = null;
 
 function selectedFilter(geoid) {
@@ -62,8 +99,7 @@ function initMap() {
   window.__map = map;
   map.fitBounds(RI_BOUNDS, { padding: 8, duration: 0 });
 
-  fetch('ri_outline.geojson')
-    .then((r) => r.json())
+  fetchData('ri_outline.geojson')
     .then((gj) => map.getSource('ri-outline').setData(gj))
     .catch((err) => toast('Failed to load state outline', err));
 
@@ -118,9 +154,7 @@ function flyGroup(kind, key) {
 }
 
 async function loadData() {
-  const r = await fetch('data/block_props.json');
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  state.data = await r.json();
+  state.data = await fetchData('data/block_props.json');
   document.getElementById('search-input').disabled = false;
   document.getElementById('search-input').placeholder = 'Search block, tract, county, or GEOID…';
 }
@@ -175,6 +209,7 @@ on('var', () => writePermalink());
 async function boot() {
   initPanel();
   initSearch();
+  await loadPmtiles();
   const map = initMap();
   map.on('load', () => {
     renderLegend(state.variable);

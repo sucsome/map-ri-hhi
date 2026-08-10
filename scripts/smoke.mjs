@@ -117,16 +117,18 @@ try {
   })()`);
   check('map canvas mounted', choro);
 
-  // ---- tile archive integrity: range requests must serve the full archive ----
+  // ---- tile archive: full download must yield the exact uncompressed bytes ----
   const archive = await cdp.eval(`(async () => {
-    const r = await fetch('${ARCHIVE}', { headers: { Range: 'bytes=0-127' } });
-    return { status: r.status, range: r.headers.get('content-range') || '', len: (await r.arrayBuffer()).byteLength };
+    const r = await fetch('${ARCHIVE}');
+    const buf = await r.arrayBuffer();
+    return { status: r.status, len: buf.byteLength, magic: new TextDecoder().decode(new Uint8Array(buf, 0, 7)) };
   })()`);
-  check('tile archive serves full size via range', archive.status === 206 && archive.range.endsWith(`/${EXPECTED_SIZE}`), `${archive.range} (expected ${EXPECTED_SIZE})`);
+  check('tile archive downloads at full size', archive.status === 200 && archive.len === EXPECTED_SIZE, `${archive.len} bytes magic=${JSON.stringify(archive.magic)} (expected ${EXPECTED_SIZE})`);
 
-  // ---- block features must actually be present in loaded tiles ----
+  // ---- block features must actually be present in the app's in-memory archive ----
   const tiles = await cdp.eval(`(async () => {
-    const t = new pmtiles.PMTiles('${ARCHIVE}');
+    const t = window.__pmtiles;
+    if (!t) return { hasMd: false, rows: [{ err: 'window.__pmtiles missing' }] };
     const md = await t.getMetadata();
     const rows = [];
     for (const [z, x, y] of ${JSON.stringify(TILE_SAMPLE)}) {
@@ -138,7 +140,7 @@ try {
     return { hasMd: !!md && typeof md === 'object', mdName: md && md.name, rows };
   })()`);
   check('tile archive metadata loads', tiles.hasMd === true, tiles.mdName || '');
-  check('block tiles served from archive', tiles.rows.every((r) => r.bytes > 0 && !r.err), tiles.rows.map((r) => `${r.z}/${r.x}/${r.y}:${r.err ? 'ERR ' + r.err : r.bytes + 'B'}`).join(', '));
+  check('block tiles served from in-memory archive', tiles.rows.every((r) => r.bytes > 0 && !r.err), tiles.rows.map((r) => `${r.z}/${r.x}/${r.y}:${r.err ? 'ERR ' + r.err : r.bytes + 'B'}`).join(', '));
 
   check('no visible toast error', (await cdp.eval(`document.getElementById('toast').classList.contains('show')`)) === false);
 
