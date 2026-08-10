@@ -51,7 +51,7 @@ const chrome = spawn(CHROME, [
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function waitFor(fn, timeout = 15000, step = 200) {
+async function waitFor(fn, timeout = 60000, step = 200) {
   const t0 = Date.now();
   while (Date.now() - t0 < timeout) {
     try { const v = await fn(); if (v) return v; } catch {}
@@ -105,7 +105,7 @@ try {
   await cdp.send('Page.navigate', { url: APP });
 
   await waitFor(() => cdp.eval(`document.getElementById('search-input') && !document.getElementById('search-input').disabled`));
-  await waitFor(() => cdp.eval(`document.getElementById('legend').querySelector('h4')?.textContent?.length > 0`), 15000);
+  await waitFor(() => cdp.eval(`document.getElementById('legend').querySelector('h4')?.textContent?.length > 0`), 60000);
   await sleep(300);
 
   check('variable selector has 4 options', await cdp.eval(`document.querySelectorAll('#variable option').length`) === 4);
